@@ -155,8 +155,10 @@ def fit_clusters(df: pd.DataFrame, n_clusters: int | None = 4, seed: int = 42, m
 
     upper = len(feats) - 1
     if n_clusters is None:
+        # Roughly 10+ transactions per pattern, so a short statement isn't sliced into groups of one or two.
+        cap = min(max_auto, max(2, len(feats) // 10), upper)
         best = None
-        for k in range(min(3, upper), min(max_auto, upper) + 1):
+        for k in range(min(3, cap), cap + 1):
             cand = fit_k(k)
             if cand[2] is not None and (best is None or cand[2] > best[2]):
                 best = cand

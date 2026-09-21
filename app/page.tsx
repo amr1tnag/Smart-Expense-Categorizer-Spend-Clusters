@@ -1,7 +1,8 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Commitments from "@/components/Commitments";
+import Landing, { DropArea } from "@/components/Landing";
 import MonthChart from "@/components/MonthChart";
 import Patterns from "@/components/Patterns";
 import SourceBar from "@/components/SourceBar";
@@ -58,6 +59,14 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const [pickError, setPickError] = useState<string | null>(null);
+
+  // A rejected file (wrong type) is reported for a few seconds, then forgotten.
+  useEffect(() => {
+    if (!pickError) return;
+    const t = setTimeout(() => setPickError(null), 7000);
+    return () => clearTimeout(t);
+  }, [pickError]);
 
   useEffect(() => {
     if (!file) {
@@ -110,18 +119,59 @@ export default function Home() {
     setQuery("");
   }, []);
 
-  const chooseFile = (f: File | null) => {
-    setFile(f);
-    resetView();
-  };
+  const chooseFile = useCallback(
+    (f: File) => {
+      if (!/\.csv$/i.test(f.name) && !f.type.includes("csv")) {
+        // Keep whatever is on screen; just say why this one was refused.
+        setPickError("That isn't a CSV file. Export your statement as CSV from your bank and try again.");
+        return;
+      }
+      setPickError(null);
+      setFile(f);
+      resetView();
+    },
+    [resetView],
+  );
   const pick = () => input.current?.click();
 
-  const onDrop = (e: DragEvent) => {
-    e.preventDefault();
-    setDragging(false);
-    const f = e.dataTransfer.files?.[0];
-    if (f) chooseFile(f);
-  };
+  // The whole window is a drop target. Without this, a file dropped a few pixels
+  // outside the box makes the browser open the CSV in the tab instead.
+  useEffect(() => {
+    let depth = 0;
+    const carriesFiles = (e: globalThis.DragEvent) => !!e.dataTransfer?.types?.includes("Files");
+    const enter = (e: globalThis.DragEvent) => {
+      if (!carriesFiles(e)) return;
+      e.preventDefault();
+      depth += 1;
+      setDragging(true);
+    };
+    const over = (e: globalThis.DragEvent) => {
+      if (carriesFiles(e)) e.preventDefault();
+    };
+    const leave = (e: globalThis.DragEvent) => {
+      if (!carriesFiles(e)) return;
+      depth = Math.max(0, depth - 1);
+      if (depth === 0) setDragging(false);
+    };
+    const drop = (e: globalThis.DragEvent) => {
+      if (!carriesFiles(e)) return;
+      e.preventDefault();
+      depth = 0;
+      setDragging(false);
+      const f = e.dataTransfer?.files?.[0];
+      if (f) chooseFile(f);
+    };
+    window.addEventListener("dragenter", enter);
+    window.addEventListener("dragover", over);
+    window.addEventListener("dragleave", leave);
+    window.addEventListener("drop", drop);
+    return () => {
+      window.removeEventListener("dragenter", enter);
+      window.removeEventListener("dragover", over);
+      window.removeEventListener("dragleave", leave);
+      window.removeEventListener("drop", drop);
+    };
+  }, [chooseFile]);
 
   const review = () => {
     setFilter("review");
@@ -172,6 +222,13 @@ export default function Home() {
       />
       <SourceBar fileName={file?.name ?? null} onPick={pick} clusters={clusters} onClusters={setClusters} />
 
+      {pickError && (
+        <div className="alert" role="alert">
+          <strong>We didn&apos;t open that file</strong>
+          {pickError}
+        </div>
+      )}
+
       {error && (
         <div className="alert" role="alert">
           <strong>We couldn&apos;t analyze that file</strong>
@@ -180,27 +237,10 @@ export default function Home() {
         </div>
       )}
 
-      {(!file || error) && (
-        <div
-          className="dropzone"
-          data-over={dragging}
-          onDragOver={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-        >
-          <h1>{error ? "Try another file" : "Drop in a bank statement"}</h1>
-          <p>
-            Any CSV with <code>date</code>, <code>description</code> and <code>amount</code> columns. The file
-            is analyzed in memory and not saved.
-          </p>
-          <button type="button" className="btn primary" style={{ marginTop: 12 }} onClick={pick}>
-            Choose a CSV
-          </button>
-        </div>
-      )}
+      {dragging && data && <div className="drag-hint">Drop to analyze this file instead</div>}
+
+      {!file && <Landing dragging={dragging} onPick={pick} />}
+      {file && error && <DropArea title="Try another file" dragging={dragging} onPick={pick} />}
 
       {loading && !data && !error && file && (
         <div aria-busy="true" aria-label="Analyzing your statement" style={{ marginTop: 64 }}>

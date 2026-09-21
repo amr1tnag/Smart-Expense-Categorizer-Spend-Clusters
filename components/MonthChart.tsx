@@ -6,12 +6,15 @@ import { monthLabel, rupees, rupeesCompact } from "@/lib/format";
 import type { CategoryId, MonthTotal } from "@/lib/types";
 import { useTooltip } from "./Tooltip";
 
-/** Round the top of the scale up to 1, 2, 2.5 or 5 times a power of ten. */
-function niceMax(v: number): number {
-  if (v <= 0) return 1;
-  const p = 10 ** Math.floor(Math.log10(v));
-  const f = v / p;
-  return (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+/** Ticks at round steps (1, 2, 2.5 or 5 times a power of ten), topped by the first tick at or above the data. */
+function niceScale(max: number): { top: number; ticks: number[] } {
+  if (max <= 0) return { top: 1, ticks: [1] };
+  const raw = max / 4;
+  const p = 10 ** Math.floor(Math.log10(raw));
+  const f = raw / p;
+  const step = (f <= 1 ? 1 : f <= 2 ? 2 : f <= 2.5 ? 2.5 : f <= 5 ? 5 : 10) * p;
+  const n = Math.max(1, Math.ceil(max / step - 1e-9));
+  return { top: step * n, ticks: Array.from({ length: n }, (_, i) => step * (i + 1)) };
 }
 
 type Props = { monthly: MonthTotal[]; active: CategoryId | null };
@@ -22,8 +25,7 @@ export default function MonthChart({ monthly, active }: Props) {
     return <p className="section-note">No dates could be read, so there is no monthly view.</p>;
   }
 
-  const top = niceMax(Math.max(...monthly.map((m) => m.total)));
-  const ticks = [0.25, 0.5, 0.75, 1];
+  const { top, ticks } = niceScale(Math.max(...monthly.map((m) => m.total)));
   const multiYear = new Set(monthly.map((m) => m.month.slice(0, 4))).size > 1;
   const present = CATEGORY_ORDER.filter((id) =>
     monthly.some((m) => (m.by_category[id] ?? 0) > 0),
@@ -34,13 +36,16 @@ export default function MonthChart({ monthly, active }: Props) {
       <div className="months">
         <div className="yaxis" aria-hidden="true">
           {ticks.map((t) => (
-            <span key={t} style={{ bottom: `${t * 100}%` }} className="num">
-              {rupeesCompact(top * t)}
+            <span key={t} style={{ bottom: `${(t / top) * 100}%` }} className="num">
+              {rupeesCompact(t)}
             </span>
           ))}
         </div>
 
         <div className="plot">
+          {ticks.map((t) => (
+            <div key={t} className="gridline" aria-hidden="true" style={{ bottom: `${(t / top) * 100}%` }} />
+          ))}
           <div className="cols" data-active={active ?? undefined}>
             {monthly.map((m) => (
               <div className="col" key={m.month}>

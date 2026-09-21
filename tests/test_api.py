@@ -32,6 +32,14 @@ def test_uploaded_statement_is_analyzed_end_to_end():
     assert "evaluation" not in j  # there is no answer key for an upload
 
 
+def test_a_roughly_monthly_payment_counts_once_per_month():
+    # Rent landing 29 and 28 days apart is one rent a month, not 1.05 of them.
+    rows = "\n".join(f"{d},NEFT/LANDLORD RENT/SBIN,24000" for d in ("2025-01-05", "2025-02-03", "2025-03-03"))
+    j = post_csv("date,description,amount\n" + rows).json()
+    assert [r["monthly_equivalent"] for r in j["recurring"]] == [24000]
+    assert j["metrics"]["recurring_monthly"] == 24000
+
+
 def test_the_analyzer_has_no_built_in_sample():
     # No file means nothing to analyze; the old `use_sample` switch is gone.
     for data in ({}, {"use_sample": "true"}):

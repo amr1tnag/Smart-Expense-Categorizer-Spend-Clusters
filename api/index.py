@@ -102,6 +102,17 @@ def read_statement(content: bytes | None) -> pd.DataFrame:
     return df.reset_index(drop=True)
 
 
+def monthly_equivalent(amount: float, gap_days: float) -> float:
+    """What a recurring payment costs per month.
+
+    Anything paid roughly monthly counts once: rent that lands every 28 or 31
+    days is one rent a month, not 1.05. Other cadences are scaled to 30 days.
+    """
+    if 26 <= gap_days <= 35:
+        return amount
+    return amount * 30 / max(gap_days, 1)
+
+
 def _num(x, ndigits: int = 2):
     return None if x is None or pd.isna(x) else round(float(x), ndigits)
 
@@ -171,7 +182,7 @@ async def analyze(
             "payments": int(r.payments),
             "typical_amount": _num(r.typical_amount),
             "cadence_days": _num(r.gap_days, 0),
-            "monthly_equivalent": _num(r.typical_amount * 30 / max(r.gap_days, 1)),
+            "monthly_equivalent": _num(monthly_equivalent(r.typical_amount, r.gap_days)),
             "last_date": r.last_date,
         }
         for r in recurring.itertuples()

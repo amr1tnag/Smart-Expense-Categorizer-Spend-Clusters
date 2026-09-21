@@ -515,8 +515,14 @@ button {
   position: relative;
   height: 300px;
   border-bottom: 1px solid var(--baseline);
-  background-image: linear-gradient(to bottom, var(--grid) 1px, transparent 1px);
-  background-size: 100% 25%;
+}
+
+.gridline {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: var(--grid);
 }
 
 .cols {
@@ -990,45 +996,251 @@ table.txn {
 }
 
 /* ----------------------------------------------------------- empty/state */
-.dropzone {
-  display: grid;
-  place-items: center;
-  gap: 8px;
-  margin-top: clamp(28px, 6vw, 56px);
-  padding: clamp(36px, 9vw, 88px) 24px;
-  border: 1.5px dashed var(--line-strong);
-  border-radius: 16px;
-  background: var(--surface);
-  text-align: center;
-  transition: border-color 120ms, background 120ms;
-}
-
-.dropzone[data-over="true"] {
-  border-color: var(--ink);
-  background: var(--sunken);
-}
-
-.dropzone h1 {
-  margin: 0;
-  font-family: var(--font-display);
-  font-weight: 600;
-  font-size: clamp(1.7rem, 4vw, 2.6rem);
-  letter-spacing: -0.03em;
-  line-height: 1.1;
-}
-
-.dropzone p {
-  margin: 0;
-  max-width: 52ch;
-  color: var(--ink-2);
-}
-
-.dropzone code,
-.hint code {
+code {
   padding: 1px 6px;
   border-radius: 4px;
   background: var(--sunken);
   font-size: 0.92em;
+}
+
+/* ---------------------------------------------------------------- landing */
+.landing {
+  padding-top: clamp(28px, 6vw, 72px);
+}
+
+.l-hero h1 {
+  margin: 0;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: clamp(2.4rem, 6vw, 4.4rem);
+  line-height: 1.02;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.l-hero h1 span {
+  display: block;
+}
+
+.l-sub {
+  margin: 22px 0 0;
+  max-width: 58ch;
+  color: var(--ink-2);
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.drop {
+  margin-top: clamp(28px, 5vw, 48px);
+  padding: clamp(20px, 3vw, 32px);
+  /* The dashed edge is the "drop here" cue, so it needs more weight than a hairline. */
+  border: 1.5px dashed color-mix(in srgb, var(--ink-3) 65%, transparent);
+  border-radius: 16px;
+  background: var(--surface);
+  transition: border-color 150ms, background 150ms;
+}
+
+.drop[data-over="true"] {
+  border-style: solid;
+  border-color: var(--ink);
+  background: var(--sunken);
+}
+
+.drop-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px 24px;
+}
+
+.drop-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 1.6rem;
+  letter-spacing: -0.025em;
+}
+
+.drop-sub {
+  margin: 4px 0 0;
+  color: var(--ink-2);
+  font-size: 14px;
+}
+
+/* A legend of the eight groups, not data. It swells while a file is dragged over. */
+.drop-strip {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  height: 48px;
+  margin-top: 24px;
+}
+
+.drop-strip i {
+  flex: 1;
+  height: 10px;
+  border-radius: 3px;
+  background: var(--c);
+  transition: height 240ms cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+.drop-strip i:first-child {
+  border-top-left-radius: 8px;
+  border-bottom-left-radius: 8px;
+}
+
+.drop-strip i:last-child {
+  border-top-right-radius: 8px;
+  border-bottom-right-radius: 8px;
+}
+
+.drop[data-over="true"] .drop-strip i {
+  height: 48px;
+}
+
+.drop-cap {
+  margin: 6px 0 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.drop-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 20px;
+  margin: 8px 0 0;
+  padding: 0;
+  list-style: none;
+  font-size: 14px;
+}
+
+.drop-legend li {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.gets {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-top: clamp(56px, 8vw, 96px);
+  border-top: 1px solid var(--line);
+}
+
+.gets > div {
+  padding: 24px clamp(16px, 2.4vw, 32px) 0 0;
+}
+
+.gets > div + div {
+  padding-left: clamp(16px, 2.4vw, 32px);
+  border-left: 1px solid var(--line);
+}
+
+.gets h3 {
+  margin: 0 0 8px;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 1.2rem;
+  letter-spacing: -0.02em;
+}
+
+.gets p {
+  margin: 0;
+  max-width: 38ch;
+  color: var(--ink-2);
+  font-size: 15px;
+}
+
+.before {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: clamp(32px, 5vw, 72px);
+  margin-top: clamp(56px, 8vw, 96px);
+}
+
+.before h2 {
+  margin: 0 0 12px;
+  font-family: var(--font-display);
+  font-optical-sizing: auto;
+  font-weight: 600;
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.before p {
+  margin: 0 0 28px;
+  max-width: 52ch;
+  text-wrap: pretty;
+  color: var(--ink-2);
+  font-size: 15px;
+}
+
+.before p.fine {
+  margin: 12px 0 0;
+  color: var(--ink-3);
+  font-size: 13px;
+}
+
+.needs {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.needs th,
+.needs td {
+  padding: 11px 16px 11px 0;
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  vertical-align: baseline;
+}
+
+.needs th {
+  width: 1%;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.needs td {
+  color: var(--ink-2);
+}
+
+@media (max-width: 800px) {
+  .gets {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .gets > div,
+  .gets > div + div {
+    padding: 20px 0 0;
+    border-left: 0;
+  }
+  .gets > div + div {
+    margin-top: 20px;
+    border-top: 1px solid var(--line);
+  }
+  .before {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+.drag-hint {
+  position: fixed;
+  z-index: 40;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 10px 18px;
+  border: 1px solid var(--ink);
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--surface);
+  font-size: 14px;
+  font-weight: 600;
+  pointer-events: none;
 }
 
 .alert {
@@ -1118,7 +1330,9 @@ table.txn {
     animation: none;
   }
   .seg-cell,
-  .col .cell {
+  .col .cell,
+  .drop-strip i,
+  .drop {
     transition: none;
   }
   .seg-cell:hover {

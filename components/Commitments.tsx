@@ -59,8 +59,8 @@ export default function Commitments({ items, monthlyTotal }: Props) {
         </button>
       )}
       <p className="commit-total">
-        All {items.length} together come to about <strong className="num">{rupees(monthlyTotal)}</strong>{" "}
-        a month before you buy anything else.
+        {items.length === 1 ? "That comes" : `All ${items.length} together come`} to about{" "}
+        <strong className="num">{rupees(monthlyTotal)}</strong> a month before you buy anything else.
       </p>
     </div>
   );

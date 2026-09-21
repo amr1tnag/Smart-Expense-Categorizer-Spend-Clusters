@@ -32,7 +32,7 @@ categorized row as JSON.
 | form field | meaning |
 | --- | --- |
 | `file` | the statement CSV (required: there is no built-in sample) |
-| `n_clusters` | `0` (default) picks 3 to 6 patterns automatically, or 2 to 8 to choose |
+| `n_clusters` | `0` (default) picks automatically: 3 to 6 patterns on a full statement, fewer on a short one (about 10 transactions per pattern). Or 2 to 8 to choose |
 | `corrections` | JSON list of `{description, category}`; the model is refit with them |
 
 Bad input comes back as a 400 with a readable `error` (missing columns, an empty
@@ -142,7 +142,8 @@ petrol pumps do, and they are not commitments.
 **Patterns** (`src/clusters.py`). Each transaction becomes six features:
 `log_amount`, `is_weekend`, a circular day of month (`day_sin`, `day_cos`),
 `hour_bucket`, and `is_recurring`. Standard-scaled, then K-Means, with k chosen
-by silhouette score from 3 to 6 unless you choose it. Each cluster is named from
+by silhouette score (3 to 6 on a full statement, capped at about one pattern per
+10 transactions) unless you choose it. Each cluster is named from
 its own statistics, and duplicate names are told apart by top category.
 
 ## Layout

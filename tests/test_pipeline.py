@@ -112,6 +112,16 @@ def test_auto_k_picks_a_reasonable_number_of_clusters(holdout):
     assert score > 0.1
 
 
+def test_auto_k_scales_with_how_much_data_there_is(holdout):
+    def auto_k(n):
+        labels, _, _ = clusters.fit_clusters(holdout.head(n), n_clusters=None)
+        return len(set(labels))
+
+    assert auto_k(8) == 2  # too little data for more than a split in two
+    assert auto_k(35) <= 3
+    assert 3 <= auto_k(204) <= 6
+
+
 def test_clustering_handles_tiny_inputs():
     df = pd.DataFrame({"date": ["2024-01-01"], "description": ["X"], "amount": [10]})
     labels, model, score = clusters.fit_clusters(df)
