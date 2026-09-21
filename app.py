@@ -1,6 +1,4 @@
 """Streamlit UI: upload a statement, get categories and spend clusters."""
-from pathlib import Path
-
 import altair as alt
 import pandas as pd
 import streamlit as st
@@ -11,17 +9,14 @@ REQUIRED = {"date", "description", "amount"}
 
 st.set_page_config(page_title="Smart Expense Categorizer", layout="wide")
 st.title("Smart Expense Categorizer + Spend Clusters")
-st.caption("Naive Bayes labels each transaction; K-Means groups your spending behaviour.")
+st.caption("An ensemble text classifier labels each transaction; K-Means groups your spending behaviour.")
 
 
 @st.cache_resource
 def get_model():
-    if not Path(categorizer.MODEL_PATH).exists():
-        seed = pd.read_csv("data/seed_labeled.csv")
-        pipe, _, _ = categorizer.train(seed)
-        categorizer.save(pipe)
-        return pipe
-    return categorizer.load()
+    # Fitting takes well under a second, so train in memory at launch instead of
+    # loading a saved artifact that can go stale when the model changes.
+    return categorizer.fit(pd.read_csv("data/seed_labeled.csv"))
 
 
 @st.cache_data
@@ -33,13 +28,14 @@ with st.sidebar:
     st.header("Input")
     upload = st.file_uploader("Statement CSV", type="csv")
     use_sample = st.checkbox("Use the bundled sample statement", value=upload is None)
-    n_clusters = st.slider("Spend clusters", 2, 8, 4)
+    auto_k = st.checkbox("Choose the number of clusters automatically", value=True)
+    n_clusters = st.slider("Spend clusters", 2, 8, 4, disabled=auto_k)
     st.markdown("CSV needs columns: `date`, `description`, `amount`.")
 
 if upload is not None and not use_sample:
     df = read_csv(upload)
 elif use_sample:
-    df = pd.read_csv("data/seed_labeled.csv").drop(columns=["category"])
+    df = pd.read_csv("data/sample_statement.csv").drop(columns=["category"])
 else:
     st.info("Upload a CSV or tick the sample box to get started.")
     st.stop()
@@ -55,7 +51,7 @@ preds = categorizer.predict(model, df["description"])
 df["category"] = preds["category"].values
 df["confidence"] = preds["confidence"].values
 
-labels, _, silhouette = clusters.fit_clusters(df, n_clusters=n_clusters)
+labels, _, silhouette = clusters.fit_clusters(df, n_clusters=None if auto_k else n_clusters)
 df["cluster"] = labels
 summary = clusters.describe_clusters(df, labels)
 cluster_names = dict(zip(summary["cluster"], summary["label"]))
@@ -65,7 +61,7 @@ spend = pd.to_numeric(df["amount"], errors="coerce").abs()
 c1, c2, c3 = st.columns(3)
 c1.metric("Transactions", len(df))
 c2.metric("Total spend", f"{spend.sum():,.0f}")
-c3.metric("Low-confidence rows", int((df["confidence"] < 0.5).sum()))
+c3.metric("Low-confidence rows", int((df["confidence"] < categorizer.LOW_CONFIDENCE).sum()))
 
 tab_cat, tab_clust, tab_rows = st.tabs(["Categories", "Clusters", "Transactions"])
 
@@ -109,7 +105,7 @@ with tab_clust:
 
 with tab_rows:
     low_only = st.checkbox("Show only rows the model is unsure about")
-    view = df[df["confidence"] < 0.5] if low_only else df
+    view = df[df["confidence"] < categorizer.LOW_CONFIDENCE] if low_only else df
     st.dataframe(
         view[["date", "description", "amount", "category", "confidence", "cluster_label"]],
         width="stretch",
