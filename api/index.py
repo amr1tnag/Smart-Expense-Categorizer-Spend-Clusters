@@ -128,6 +128,13 @@ async def analyze(
     preds = categorizer.predict(model, df["description"])
     df["category"] = preds["category"].values
     df["confidence"] = preds["confidence"].values
+    # The model learns from corrections, but a row the user set by hand should
+    # never come back different, so pin exact matches.
+    pinned = dict(fixes)
+    df["corrected"] = df["description"].isin(pinned)
+    if pinned:
+        df.loc[df["corrected"], "category"] = df.loc[df["corrected"], "description"].map(pinned)
+        df.loc[df["corrected"], "confidence"] = 1.0
 
     auto = n_clusters <= 0
     k = None if auto else max(2, min(int(n_clusters), 8))
@@ -165,6 +172,7 @@ async def analyze(
     recurring_rows = [
         {
             "merchant": r.merchant,
+            "category": r.category,
             "payments": int(r.payments),
             "typical_amount": _num(r.typical_amount),
             "cadence_days": _num(r.gap_days, 0),
@@ -179,7 +187,7 @@ async def analyze(
         row["share"] = _num(row["total_spend"] / total if total else 0, 4)
 
     rows = work[
-        ["date", "description", "amount", "_amt", "category", "confidence", "cluster_label", "recurring"]
+        ["date", "description", "amount", "_amt", "category", "confidence", "cluster_label", "recurring", "corrected"]
     ].rename(columns={"_amt": "abs_amount"})
     rows = rows.assign(low_confidence=rows["confidence"] < categorizer.LOW_CONFIDENCE)
 

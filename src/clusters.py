@@ -78,9 +78,14 @@ def _recurring_stats(df: pd.DataFrame) -> pd.DataFrame:
         monthly = n >= 3 and 24 <= gap <= 38 and gaps.std(ddof=0) <= 7
         fixed = cv <= 0.05 and gap >= 20
         if monthly or fixed:
+            category = None
+            if "category" in df.columns:
+                modes = df.loc[idx, "category"].mode()
+                category = modes.iat[0] if len(modes) else None
             rows.append(
                 {
                     "key": key,
+                    "category": category,
                     "merchant": key.title(),
                     "payments": int(n),
                     "typical_amount": float(amt.median()),
@@ -90,12 +95,12 @@ def _recurring_stats(df: pd.DataFrame) -> pd.DataFrame:
                 }
             )
     return pd.DataFrame(
-        rows, columns=["key", "merchant", "payments", "typical_amount", "gap_days", "last_date", "index"]
+        rows, columns=["key", "merchant", "category", "payments", "typical_amount", "gap_days", "last_date", "index"]
     )
 
 
 def recurring_payments(df: pd.DataFrame) -> pd.DataFrame:
-    """Recurring merchants, largest first (merchant, payments, typical_amount, gap_days, last_date)."""
+    """Recurring merchants, largest first (merchant, category, payments, typical_amount, gap_days, last_date)."""
     stats = _recurring_stats(df)
     return (
         stats.drop(columns=["key", "index"])
@@ -201,7 +206,7 @@ def describe_clusters(df: pd.DataFrame, labels) -> pd.DataFrame:
 def _name_cluster(grp: pd.DataFrame, overall_median: float) -> str:
     avg = grp["_amount"].mean()
     if grp["_recurring"].mean() > 0.6:
-        return "Recurring bills & subscriptions"
+        return "Fixed monthly payments"
     if avg > 3 * overall_median or avg > 5000:
         return "Big-ticket spends"
     if grp["_weekend"].mean() > 0.5:

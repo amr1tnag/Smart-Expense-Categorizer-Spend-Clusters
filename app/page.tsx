@@ -1,337 +1,305 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import CategoryChart from "@/components/CategoryChart";
-import ClusterChart from "@/components/ClusterChart";
-import DataTable, { type Column } from "@/components/DataTable";
-import type { AnalyzeResponse, TransactionRow } from "@/lib/types";
+import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import Commitments from "@/components/Commitments";
+import MonthChart from "@/components/MonthChart";
+import Patterns from "@/components/Patterns";
+import SourceBar, { type Source } from "@/components/SourceBar";
+import SpendStrip from "@/components/SpendStrip";
+import Transactions, { type Filter } from "@/components/Transactions";
+import { dateRange, percent, rupees, spanWords } from "@/lib/format";
+import type { AnalyzeResponse, CategoryId, CategoryTotal, Corrections, TransactionRow } from "@/lib/types";
 
-type Tab = "categories" | "clusters" | "transactions";
+const PHRASE: Record<CategoryId, string> = {
+  travel: "travel",
+  food: "food",
+  shopping: "shopping",
+  bills: "bills",
+  entertainment: "entertainment",
+  health: "health",
+  rent: "rent",
+  other: "cash, transfers and fees",
+};
 
-function fmtNum(n: number) {
-  return n.toLocaleString(undefined, { maximumFractionDigits: 0 });
+function takeaway(categories: CategoryTotal[]): string {
+  const [a, b] = [...categories].sort((x, y) => y.total - x.total);
+  if (!a) return "";
+  const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+  if (!b || a.share >= 0.6) return `${cap(PHRASE[a.category])} took ${percent(a.share)} of it.`;
+  // Sum the rounded shares so the sentence matches the legend beneath it.
+  const combined = Math.round(a.share * 100) + Math.round(b.share * 100);
+  return `${cap(PHRASE[a.category])} and ${PHRASE[b.category]} took ${combined}% of it.`;
 }
 
 function toCsv(rows: TransactionRow[]): string {
-  const cols: (keyof TransactionRow)[] = [
-    "date",
-    "description",
-    "amount",
-    "category",
-    "confidence",
-    "cluster_label",
-  ];
-  const escape = (v: unknown) => {
+  const esc = (v: unknown) => {
     const s = String(v ?? "");
     return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
   };
-  const lines = [cols.join(",")];
-  for (const row of rows) {
-    lines.push(cols.map((c) => escape(row[c])).join(","));
-  }
-  return lines.join("\n");
+  const head = ["date", "description", "amount", "category", "confidence", "pattern", "repeats"];
+  const lines = rows.map((r) =>
+    [r.date, r.description, r.amount, r.category, r.confidence.toFixed(3), r.cluster_label, r.recurring].map(esc).join(","),
+  );
+  return [head.join(","), ...lines].join("\n");
 }
 
 export default function Home() {
+  const [source, setSource] = useState<Source>("sample");
   const [file, setFile] = useState<File | null>(null);
-  const [useSample, setUseSample] = useState(true);
-  const [nClusters, setNClusters] = useState(4);
-  const [tab, setTab] = useState<Tab>("categories");
-  const [lowOnly, setLowOnly] = useState(false);
+  const [clusters, setClusters] = useState(0);
+  const [corrections, setCorrections] = useState<Corrections>({});
+
+  const [filter, setFilter] = useState<Filter>("all");
+  const [category, setCategory] = useState<CategoryId | null>(null);
+  const [pattern, setPattern] = useState<string | null>(null);
+  const [query, setQuery] = useState("");
 
   const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(false);
-
-  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
-    if (!useSample && !file) return;
-
-    if (debounceRef.current) clearTimeout(debounceRef.current);
-    debounceRef.current = setTimeout(() => {
-      const form = new FormData();
-      form.set("use_sample", String(useSample));
-      form.set("n_clusters", String(nClusters));
-      if (!useSample && file) form.set("file", file);
-
+    if (source === "file" && !file) {
+      setData(null);
+      setError(null);
+      setLoading(false);
+      return;
+    }
+    const ctl = new AbortController();
+    const timer = setTimeout(async () => {
       setLoading(true);
       setError(null);
-      fetch("/api/analyze", { method: "POST", body: form })
-        .then(async (res) => {
-          const json = await res.json();
-          if (!res.ok) throw new Error(json.error ?? "Request failed");
-          setData(json as AnalyzeResponse);
-        })
-        .catch((err: Error) => {
-          setError(err.message);
-          setData(null);
-        })
-        .finally(() => setLoading(false));
+      const form = new FormData();
+      form.set("use_sample", String(source === "sample"));
+      form.set("n_clusters", String(clusters));
+      form.set(
+        "corrections",
+        JSON.stringify(Object.entries(corrections).map(([description, category]) => ({ description, category }))),
+      );
+      if (source === "file" && file) form.set("file", file);
+      try {
+        const res = await fetch("/api/analyze", { method: "POST", body: form, signal: ctl.signal });
+        const text = await res.text();
+        let json: { error?: string } & Partial<AnalyzeResponse>;
+        try {
+          json = JSON.parse(text);
+        } catch {
+          throw new Error("The analyzer sent back something unexpected. Try again in a moment.");
+        }
+        if (!res.ok) throw new Error(json.error ?? "The analyzer couldn't process that file.");
+        setData(json as AnalyzeResponse);
+      } catch (e) {
+        if ((e as Error).name === "AbortError") return;
+        setError((e as Error).message);
+        setData(null);
+      } finally {
+        if (!ctl.signal.aborted) setLoading(false);
+      }
     }, 200);
-
     return () => {
-      if (debounceRef.current) clearTimeout(debounceRef.current);
+      clearTimeout(timer);
+      ctl.abort();
     };
-  }, [file, useSample, nClusters]);
+  }, [source, file, clusters, corrections]);
 
-  const clusterOrder = useMemo(
-    () =>
-      data
-        ? [...data.clusters.summary]
-            .sort((a, b) => a.cluster - b.cluster)
-            .map((s) => s.label)
-        : [],
-    [data],
-  );
+  const resetView = useCallback(() => {
+    setCorrections({});
+    setFilter("all");
+    setCategory(null);
+    setPattern(null);
+    setQuery("");
+  }, []);
 
-  const transactionRows = useMemo(() => {
-    if (!data) return [];
-    return lowOnly ? data.rows.filter((r) => r.confidence < 0.5) : data.rows;
-  }, [data, lowOnly]);
+  const chooseSource = (s: Source) => {
+    setSource(s);
+    resetView();
+  };
+  const chooseFile = (f: File | null) => {
+    setFile(f);
+    resetView();
+  };
 
-  const rowColumns: Column<TransactionRow>[] = [
-    { key: "date", header: "Date" },
-    { key: "description", header: "Description" },
-    {
-      key: "amount",
-      header: "Amount",
-      align: "right",
-      format: (v) => fmtNum(v as number),
-    },
-    { key: "category", header: "Category" },
-    {
-      key: "confidence",
-      header: "Confidence",
-      align: "right",
-      format: (v) => (v as number).toFixed(2),
-    },
-    { key: "cluster_label", header: "Cluster" },
-  ];
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    const f = e.dataTransfer.files?.[0];
+    if (f) chooseFile(f);
+  };
 
-  const clusterColumns: Column<AnalyzeResponse["clusters"]["summary"][number]>[] = [
-    { key: "label", header: "Cluster" },
-    { key: "transactions", header: "Transactions", align: "right" },
-    {
-      key: "total_spend",
-      header: "Total spend",
-      align: "right",
-      format: (v) => fmtNum(v as number),
-    },
-    {
-      key: "avg_amount",
-      header: "Avg amount",
-      align: "right",
-      format: (v) => fmtNum(v as number),
-    },
-    {
-      key: "weekend_share",
-      header: "Weekend share",
-      align: "right",
-      format: (v) => (v as number).toFixed(2),
-    },
-    {
-      key: "recurring_share",
-      header: "Recurring share",
-      align: "right",
-      format: (v) => (v as number).toFixed(2),
-    },
-    { key: "top_category", header: "Top category" },
-  ];
+  const review = () => {
+    setFilter("review");
+    setCategory(null);
+    setPattern(null);
+    setQuery("");
+    requestAnimationFrame(() => {
+      const reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      document.getElementById("transactions")?.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+    });
+  };
 
-  function download() {
+  const download = () => {
     if (!data) return;
-    const csv = toCsv(data.rows);
-    const blob = new Blob([csv], { type: "text/csv" });
-    const url = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(new Blob([toCsv(data.rows)], { type: "text/csv" }));
     const a = document.createElement("a");
     a.href = url;
     a.download = "categorized_transactions.csv";
     a.click();
     URL.revokeObjectURL(url);
-  }
+  };
+
+  const headline = useMemo(() => {
+    if (!data) return "";
+    const { total_spend, date_from, date_to } = data.metrics;
+    const span = date_from && date_to ? ` over ${spanWords(date_from, date_to)}` : "";
+    return `You spent ${rupees(total_spend)}${span}. ${takeaway(data.categories)}`.trim();
+  }, [data]);
+
+  const stale = loading && data !== null;
+  const range = data ? dateRange(data.metrics.date_from, data.metrics.date_to) : null;
+  const unsure = data ? data.rows.filter((r) => r.low_confidence && !r.corrected).length : 0;
 
   return (
-    <div className="mx-auto flex max-w-[1400px] gap-8 p-6 lg:p-10">
-      <aside className="w-64 shrink-0">
-        <h2 className="mb-4 text-lg font-semibold">Input</h2>
+    <div className="shell">
+      <SourceBar
+        source={source}
+        onSource={chooseSource}
+        file={file}
+        onFile={chooseFile}
+        clusters={clusters}
+        onClusters={setClusters}
+      />
 
-        <label className="mb-1 block text-sm" style={{ color: "#c3c2b7" }}>
-          Statement CSV
-        </label>
-        <input
-          type="file"
-          accept=".csv"
-          onChange={(e) => {
-            const f = e.target.files?.[0] ?? null;
-            setFile(f);
-            if (f) setUseSample(false);
+      {source === "file" && !file && (
+        <div
+          className="dropzone"
+          data-over={dragging}
+          onDragOver={(e) => {
+            e.preventDefault();
+            setDragging(true);
           }}
-          className="mb-4 block w-full cursor-pointer rounded-md border p-2 text-xs file:mr-2 file:rounded file:border-0 file:bg-white/10 file:px-2 file:py-1 file:text-xs"
-          style={{ borderColor: "rgba(255,255,255,0.1)" }}
-        />
-
-        <label className="mb-4 flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={useSample}
-            onChange={(e) => setUseSample(e.target.checked)}
-          />
-          Use the bundled sample statement
-        </label>
-
-        <label className="mb-1 block text-sm" style={{ color: "#c3c2b7" }}>
-          Spend clusters: <span className="tabular">{nClusters}</span>
-        </label>
-        <input
-          type="range"
-          min={2}
-          max={8}
-          value={nClusters}
-          onChange={(e) => setNClusters(Number(e.target.value))}
-          className="mb-4 w-full"
-        />
-
-        <p className="text-xs" style={{ color: "#898781" }}>
-          CSV needs columns: <code>date</code>, <code>description</code>,{" "}
-          <code>amount</code>.
-        </p>
-      </aside>
-
-      <main className="min-w-0 flex-1">
-        <h1 className="text-3xl font-bold">
-          Smart Expense Categorizer + Spend Clusters
-        </h1>
-        <p className="mb-6 mt-1 text-sm" style={{ color: "#898781" }}>
-          Naive Bayes labels each transaction; K-Means groups your spending
-          behaviour.
-        </p>
-
-        {error && (
-          <div
-            className="mb-6 rounded-md border px-4 py-3 text-sm"
-            style={{ borderColor: "#e66767", color: "#e66767" }}
-          >
-            {error}
-          </div>
-        )}
-
-        {!error && !data && (
-          <p style={{ color: "#898781" }}>
-            {loading ? "Analyzing…" : "Upload a CSV or tick the sample box to get started."}
+          onDragLeave={() => setDragging(false)}
+          onDrop={onDrop}
+        >
+          <h1>Drop in a bank statement</h1>
+          <p>
+            Any CSV with <code>date</code>, <code>description</code> and <code>amount</code> columns.
+            The file is analyzed in memory and not saved.
           </p>
-        )}
+          <p>
+            No statement handy?{" "}
+            <a className="link-btn" href="/sample_statement.csv" download>
+              Download a sample CSV
+            </a>{" "}
+            or{" "}
+            <button type="button" className="link-btn" onClick={() => chooseSource("sample")}>
+              use the built-in sample
+            </button>
+            .
+          </p>
+        </div>
+      )}
 
-        {data && (
-          <>
-            <div className="mb-6 grid grid-cols-3 gap-6">
-              <Stat label="Transactions" value={fmtNum(data.metrics.transactions)} />
-              <Stat label="Total spend" value={fmtNum(data.metrics.total_spend)} />
-              <Stat
-                label="Low-confidence rows"
-                value={fmtNum(data.metrics.low_confidence)}
-              />
+      {error && (
+        <div className="alert" role="alert">
+          <strong>We couldn&apos;t analyze that file</strong>
+          {error} Check that the first row has the headers <code>date</code>, <code>description</code> and{" "}
+          <code>amount</code>, then try again.
+        </div>
+      )}
+
+      {loading && !data && !error && !(source === "file" && !file) && (
+        <div aria-busy="true" aria-label="Analyzing your statement" style={{ marginTop: 64 }}>
+          <div className="skeleton" style={{ height: 120, maxWidth: 760 }} />
+          <div className="skeleton" style={{ height: 56, marginTop: 36 }} />
+          <div className="skeleton" style={{ height: 220, marginTop: 64 }} />
+        </div>
+      )}
+
+      {data && (
+        <main data-stale={stale} aria-busy={stale}>
+          <section className="hero" aria-labelledby="headline">
+            <h1 id="headline">{headline}</h1>
+            <p className="hero-sub">
+              {data.metrics.transactions} {data.metrics.transactions === 1 ? "transaction" : "transactions"}
+              {range ? ` from ${range}` : ""}.{" "}
+              {unsure > 0 ? (
+                <>
+                  The model is unsure about {unsure}.{" "}
+                  <button type="button" className="link-btn" onClick={review}>
+                    Review {unsure === 1 ? "it" : "them"}
+                  </button>{" "}
+                  and it will learn from your fixes.
+                </>
+              ) : (
+                "The model is confident about every one."
+              )}
+              {data.evaluation && !data.corrections_applied
+                ? ` Checked against the answer key, ${Math.round(data.evaluation.accuracy * 100)}% of these categories are right.`
+                : ""}
+            </p>
+            <SpendStrip categories={data.categories} active={category} onSelect={setCategory} />
+          </section>
+
+          <div className="section two-col">
+            <section aria-labelledby="months-h">
+              <div className="section-head">
+                <h2 id="months-h">Month by month</h2>
+              </div>
+              <MonthChart monthly={data.monthly} active={category} />
+            </section>
+            <section aria-labelledby="fixed-h">
+              <div className="section-head">
+                <h2 id="fixed-h">Fixed commitments</h2>
+              </div>
+              <Commitments items={data.recurring} monthlyTotal={data.metrics.recurring_monthly} />
+            </section>
+          </div>
+
+          <section className="section" aria-labelledby="patterns-h">
+            <div className="section-head">
+              <h2 id="patterns-h">How you spend</h2>
+              <p className="section-note">
+                {data.clusters.k} patterns{data.clusters.auto ? ", picked automatically" : ""}
+                {data.clusters.silhouette !== null
+                  ? `. How clearly they separate: ${data.clusters.silhouette.toFixed(2)} out of 1`
+                  : ""}
+                . Select one to see its transactions.
+              </p>
             </div>
+            <Patterns patterns={data.clusters.summary} active={pattern} onSelect={setPattern} />
+          </section>
 
-            <div
-              className="mb-4 flex gap-6 border-b text-sm"
-              style={{ borderColor: "rgba(255,255,255,0.1)" }}
-            >
-              {(
-                [
-                  ["categories", "Categories"],
-                  ["clusters", "Clusters"],
-                  ["transactions", "Transactions"],
-                ] as [Tab, string][]
-              ).map(([id, label]) => (
-                <button
-                  key={id}
-                  onClick={() => setTab(id)}
-                  className="-mb-px border-b-2 px-1 pb-2"
-                  style={{
-                    borderColor: tab === id ? "#3987e5" : "transparent",
-                    color: tab === id ? "#ffffff" : "#898781",
-                  }}
-                >
-                  {label}
-                </button>
-              ))}
+          <section className="section" aria-labelledby="txn-h">
+            <div className="section-head">
+              <h2 id="txn-h">Transactions</h2>
+              <p className="section-note">Change a category and the model relearns from it.</p>
             </div>
+            <Transactions
+              rows={data.rows}
+              filter={filter}
+              onFilter={setFilter}
+              category={category}
+              onCategory={setCategory}
+              pattern={pattern}
+              onPattern={setPattern}
+              query={query}
+              onQuery={setQuery}
+              onCorrect={(description, cat) => setCorrections((c) => ({ ...c, [description]: cat }))}
+              corrections={Object.keys(corrections).length}
+              onResetCorrections={() => setCorrections({})}
+              onDownload={download}
+            />
+          </section>
 
-            {tab === "categories" && (
-              <div className="flex flex-col gap-4">
-                <CategoryChart data={data.categories} />
-                <DataTable
-                  rowKey={(r) => r.category}
-                  columns={[
-                    { key: "category", header: "Category" },
-                    {
-                      key: "total",
-                      header: "Total",
-                      align: "right",
-                      format: (v) => fmtNum(v as number),
-                    },
-                  ]}
-                  rows={data.categories}
-                />
-              </div>
-            )}
-
-            {tab === "clusters" && (
-              <div className="flex flex-col gap-4">
-                {data.clusters.silhouette !== null && (
-                  <p className="text-xs" style={{ color: "#898781" }}>
-                    Silhouette score: {data.clusters.silhouette.toFixed(3)}{" "}
-                    (higher means better separated clusters)
-                  </p>
-                )}
-                <DataTable
-                  rowKey={(r) => String(r.cluster)}
-                  columns={clusterColumns}
-                  rows={data.clusters.summary}
-                />
-                <ClusterChart rows={data.rows} clusterOrder={clusterOrder} />
-              </div>
-            )}
-
-            {tab === "transactions" && (
-              <div className="flex flex-col gap-4">
-                <label className="flex items-center gap-2 text-sm">
-                  <input
-                    type="checkbox"
-                    checked={lowOnly}
-                    onChange={(e) => setLowOnly(e.target.checked)}
-                  />
-                  Show only rows the model is unsure about
-                </label>
-                <DataTable
-                  rowKey={(r, i) => `${r.date}-${r.description}-${i}`}
-                  columns={rowColumns}
-                  rows={transactionRows}
-                />
-                <button
-                  onClick={download}
-                  className="w-fit rounded-md px-4 py-2 text-sm font-medium"
-                  style={{ background: "#3987e5", color: "white" }}
-                >
-                  Download categorized CSV
-                </button>
-              </div>
-            )}
-          </>
-        )}
-      </main>
-    </div>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <div className="text-sm" style={{ color: "#898781" }}>
-        {label}
-      </div>
-      <div className="tabular text-2xl font-semibold">{value}</div>
+          <p className="footer">
+            Categories come from a text model trained on synthetic Indian UPI and card statements. It reads
+            merchant names, so a brand it has never seen can be wrong. Those rows are marked Check. Patterns
+            group transactions by amount, weekday, day of month and whether a merchant is paid on a steady
+            schedule.
+          </p>
+        </main>
+      )}
     </div>
   );
 }
