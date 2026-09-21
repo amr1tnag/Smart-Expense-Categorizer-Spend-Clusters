@@ -3,9 +3,39 @@
 Upload a bank/UPI statement CSV. A TF-IDF + Multinomial Naive Bayes model labels
 every transaction (food, travel, rent, shopping, bills, entertainment, health),
 then K-Means groups the transactions into spending patterns — weekend splurges,
-recurring bills, big-ticket buys — and a Streamlit UI shows the result.
+recurring bills, big-ticket buys — and a UI shows the result.
 
-## Quick start
+There are two front ends over the same model code in `src/`:
+
+- **Web app** (Next.js + a FastAPI function), deployed on Vercel.
+- **Streamlit app**, for running everything locally in Python.
+
+## Web app (Next.js + FastAPI)
+
+The Next.js page (`app/`, `components/`) posts the CSV to `POST /api/analyze`,
+served by the FastAPI app in `api/index.py`. That function trains the classifier
+from `data/seed_labeled.csv` on first request, caches it in memory for warm
+instances, and returns category totals, cluster summaries and every categorized
+row as JSON. Bad input comes back as a 400 with a readable `error` (missing
+columns, an empty file, or a non-numeric amount with the CSV line number).
+
+`vercel.json` rewrites `/api/*` to the function and bundles `src/` and `data/`
+with it. Deploying is a normal Vercel git import: it detects Next.js and the
+Python function on its own.
+
+```bash
+npm install
+npm run build -- --webpack   # see the note below
+npm i -g vercel && vercel dev   # runs the frontend and the Python API together
+```
+
+`npm run dev` on its own serves only the frontend, because `/api/*` is a Python
+function that plain `next dev` doesn't run. Use `vercel dev` for the full app.
+
+On Windows the default Turbopack build can fail with a PostCSS worker error
+(`0xc0000142`). `--webpack` avoids it, and Vercel's Linux builds are unaffected.
+
+## Streamlit app
 
 ```bash
 pip install -r requirements.txt
@@ -62,6 +92,12 @@ Current seed-data scores: 0.94 accuracy on a held-out 25%, 0.988 5-fold CV.
 ## Layout
 
 ```
+app/                    Next.js pages (App Router)
+components/             charts and table for the web UI
+lib/                    shared TS types and chart palette
+api/index.py            FastAPI function behind /api/analyze
+api/requirements.txt    Python deps for the API
+vercel.json             /api/* rewrite + files bundled with the function
 app.py                  Streamlit UI
 train.py                CLI trainer
 src/categorizer.py      TF-IDF + MultinomialNB

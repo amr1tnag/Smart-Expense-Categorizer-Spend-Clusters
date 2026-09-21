@@ -10,3 +10,6 @@ node_modules/
 .vercel/
 next-env.d.ts
 *.tsbuildinfo
+
+# Terminal Paste Image folder
+.cp-images/

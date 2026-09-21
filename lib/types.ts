@@ -39,7 +39,3 @@ export type AnalyzeResponse = {
   };
   rows: TransactionRow[];
 };
-
-export type AnalyzeError = {
-  error: string;
-};
