@@ -1,21 +1,15 @@
 "use client";
 
-import { useRef } from "react";
 import ThemeToggle from "./ThemeToggle";
 
-export type Source = "sample" | "file";
-
 type Props = {
-  source: Source;
-  onSource: (s: Source) => void;
-  file: File | null;
-  onFile: (f: File | null) => void;
+  fileName: string | null;
+  onPick: () => void;
   clusters: number; // 0 = automatic
   onClusters: (n: number) => void;
 };
 
-export default function SourceBar({ source, onSource, file, onFile, clusters, onClusters }: Props) {
-  const input = useRef<HTMLInputElement>(null);
+export default function SourceBar({ fileName, onPick, clusters, onClusters }: Props) {
   const manual = clusters > 0;
 
   return (
@@ -32,57 +26,39 @@ export default function SourceBar({ source, onSource, file, onFile, clusters, on
         <ThemeToggle />
       </div>
 
-      <div className="toolbar">
-        <div className="seg" role="radiogroup" aria-label="Statement source">
-          <button type="button" role="radio" aria-checked={source === "sample"} onClick={() => onSource("sample")}>
-            Sample statement
+      {fileName && (
+        <div className="toolbar">
+          <button type="button" className="file-btn" onClick={onPick} title="Choose a different CSV">
+            {fileName}
+            <span style={{ color: "var(--ink-3)" }}>Change</span>
           </button>
-          <button type="button" role="radio" aria-checked={source === "file"} onClick={() => onSource("file")}>
-            Your CSV
-          </button>
-        </div>
 
-        {source === "file" && (
-          <>
-            <input
-              ref={input}
-              type="file"
-              accept=".csv,text/csv"
-              className="sr-only"
-              tabIndex={-1}
-              onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-            />
-            <button type="button" className="file-btn" onClick={() => input.current?.click()}>
-              {file ? file.name : "Choose a CSV"}
-            </button>
-          </>
-        )}
-
-        <div className="field">
-          <span id="patterns-label">Spending patterns</span>
-          <div className="seg" role="radiogroup" aria-labelledby="patterns-label">
-            <button type="button" role="radio" aria-checked={!manual} onClick={() => onClusters(0)}>
-              Auto
-            </button>
-            <button type="button" role="radio" aria-checked={manual} onClick={() => onClusters(manual ? clusters : 4)}>
-              Choose
-            </button>
-          </div>
-          {manual && (
-            <div className="stepper" role="group" aria-label="Number of patterns">
-              <button type="button" aria-label="Fewer patterns" disabled={clusters <= 2} onClick={() => onClusters(clusters - 1)}>
-                −
+          <div className="field">
+            <span id="patterns-label">Spending patterns</span>
+            <div className="seg" role="radiogroup" aria-labelledby="patterns-label">
+              <button type="button" role="radio" aria-checked={!manual} onClick={() => onClusters(0)}>
+                Auto
               </button>
-              <output className="num" aria-live="polite">
-                {clusters}
-              </output>
-              <button type="button" aria-label="More patterns" disabled={clusters >= 8} onClick={() => onClusters(clusters + 1)}>
-                +
+              <button type="button" role="radio" aria-checked={manual} onClick={() => onClusters(manual ? clusters : 4)}>
+                Choose
               </button>
             </div>
-          )}
+            {manual && (
+              <div className="stepper" role="group" aria-label="Number of patterns">
+                <button type="button" aria-label="Fewer patterns" disabled={clusters <= 2} onClick={() => onClusters(clusters - 1)}>
+                  −
+                </button>
+                <output className="num" aria-live="polite">
+                  {clusters}
+                </output>
+                <button type="button" aria-label="More patterns" disabled={clusters >= 8} onClick={() => onClusters(clusters + 1)}>
+                  +
+                </button>
+              </div>
+            )}
+          </div>
         </div>
-      </div>
+      )}
     </header>
   );
 }

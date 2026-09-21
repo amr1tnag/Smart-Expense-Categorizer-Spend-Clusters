@@ -11,7 +11,7 @@ def seed():
 
 @pytest.fixture(scope="module")
 def holdout():
-    return pd.read_csv("data/sample_statement.csv")
+    return pd.read_csv("data/holdout_statement.csv")
 
 
 @pytest.fixture(scope="module")

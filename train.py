@@ -15,7 +15,7 @@ from src import categorizer
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--data", default="data/seed_labeled.csv")
-    ap.add_argument("--holdout", default="data/sample_statement.csv", help="labeled statement to score (skipped if missing)")
+    ap.add_argument("--holdout", default="data/holdout_statement.csv", help="labeled statement to score (skipped if missing)")
     ap.add_argument("--out", default=str(categorizer.MODEL_PATH))
     args = ap.parse_args()
 

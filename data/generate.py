@@ -6,11 +6,12 @@ Writes:
   data/seed_labeled.csv        training set: many merchants x several statement
                                formats, with a `merchant` column used for
                                merchant-grouped cross-validation.
-  data/sample_statement.csv    six-month demo statement with ground-truth
-                               `category`. Deliberately includes merchants that
-                               never appear in the training set, so scoring it
-                               measures generalisation rather than memorisation.
-  public/sample_statement.csv  the same statement without labels, for download.
+  data/holdout_statement.csv   six-month statement with ground-truth `category`,
+                               used only to measure accuracy (never shown to
+                               users, never trained on). Deliberately includes
+                               merchants that never appear in the training set,
+                               so scoring it measures generalisation rather than
+                               memorisation.
 
 Everything here is synthetic. Merchant names are real brands, but amounts, dates
 and reference numbers are random.
@@ -223,10 +224,10 @@ def build_seed(rows_per_merchant: int = 7):
     return out
 
 
-# --- demo statement -----------------------------------------------------------
-# Merchants below are mostly NOT in TRAIN (marked *), so the score on this file
-# measures how well the model handles brands and formats it has never seen.
-def build_sample():
+# --- held-out evaluation statement ---------------------------------------------
+# Merchants below are mostly NOT in TRAIN, so the score on this file measures how
+# well the model handles brands and formats it has never seen.
+def build_holdout():
     rng.seed(20250101)  # independent of the training draw, so the test set never shifts
     rows = []
 
@@ -309,9 +310,7 @@ if __name__ == "__main__":
     seed = build_seed()
     write(ROOT / "data" / "seed_labeled.csv", ["date", "description", "amount", "category", "merchant"],
           [(d.isoformat(), desc, amt, cat, mer) for d, desc, amt, cat, mer in seed])
-    sample = build_sample()
-    write(ROOT / "data" / "sample_statement.csv", ["date", "description", "amount", "category"],
-          [(d.isoformat(), desc, amt, cat) for d, desc, amt, cat in sample])
-    write(ROOT / "public" / "sample_statement.csv", ["date", "description", "amount"],
-          [(d.isoformat(), desc, amt) for d, desc, amt, _ in sample])
-    print(f"seed_labeled.csv: {len(seed)} rows | sample_statement.csv: {len(sample)} rows")
+    holdout = build_holdout()
+    write(ROOT / "data" / "holdout_statement.csv", ["date", "description", "amount", "category"],
+          [(d.isoformat(), desc, amt, cat) for d, desc, amt, cat in holdout])
+    print(f"seed_labeled.csv: {len(seed)} rows | holdout_statement.csv: {len(holdout)} rows")

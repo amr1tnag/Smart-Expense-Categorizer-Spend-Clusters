@@ -3,7 +3,7 @@
   "rewrites": [{ "source": "/api/(.*)", "destination": "/api/index" }],
   "functions": {
     "api/index.py": {
-      "includeFiles": "{src/**,data/**}"
+      "includeFiles": "{src/**,data/seed_labeled.csv}"
     }
   }
 }

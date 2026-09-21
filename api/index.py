@@ -26,7 +26,6 @@ app = FastAPI()
 
 REQUIRED = {"date", "description", "amount"}
 SEED_PATH = ROOT / "data" / "seed_labeled.csv"
-SAMPLE_PATH = ROOT / "data" / "sample_statement.csv"
 
 MAX_CORRECTIONS = 200
 # A correction is one row; repeating it makes a single fix outweigh the
@@ -74,16 +73,13 @@ def parse_corrections(raw: str) -> tuple[tuple[str, str], ...]:
     return tuple(sorted(seen.items()))
 
 
-def read_statement(content: bytes | None, use_sample: bool):
-    if content is not None and not use_sample:
-        try:
-            df = pd.read_csv(io.BytesIO(content))
-        except Exception as exc:  # noqa: BLE001
-            raise BadRequest(f"Could not read CSV: {exc}") from exc
-        truth = None
-    else:
-        df = pd.read_csv(SAMPLE_PATH)
-        truth = df.pop("category")
+def read_statement(content: bytes | None) -> pd.DataFrame:
+    if content is None:
+        raise BadRequest("Upload a statement CSV to analyze.")
+    try:
+        df = pd.read_csv(io.BytesIO(content))
+    except Exception as exc:  # noqa: BLE001
+        raise BadRequest(f"Could not read CSV: {exc}") from exc
 
     df.columns = [c.strip().lower() for c in df.columns]
     missing = REQUIRED - set(df.columns)
@@ -103,7 +99,7 @@ def read_statement(content: bytes | None, use_sample: bool):
 
     dates = clusters.parse_dates(df["date"])
     df["date"] = dates.dt.strftime("%Y-%m-%d").fillna(df["date"].fillna("").astype(str))
-    return df.reset_index(drop=True), (None if truth is None else truth.reset_index(drop=True))
+    return df.reset_index(drop=True)
 
 
 def _num(x, ndigits: int = 2):
@@ -113,13 +109,12 @@ def _num(x, ndigits: int = 2):
 @app.post("/api/analyze")
 async def analyze(
     file: UploadFile | None = File(None),
-    use_sample: str = Form("false"),
     n_clusters: int = Form(0),  # 0 = pick automatically
     corrections: str = Form("[]"),
 ):
     content = await file.read() if file is not None else None
     try:
-        df, truth = read_statement(content, use_sample.lower() == "true" or content is None)
+        df = read_statement(content)
         fixes = parse_corrections(corrections)
     except BadRequest as exc:
         return JSONResponse({"error": str(exc)}, status_code=400)
@@ -192,7 +187,7 @@ async def analyze(
     rows = rows.assign(low_confidence=rows["confidence"] < categorizer.LOW_CONFIDENCE)
 
     dated = pd.to_datetime(df["date"], errors="coerce").dropna()
-    result = {
+    return {
         "metrics": {
             "transactions": int(len(df)),
             "total_spend": total,
@@ -213,6 +208,3 @@ async def analyze(
         "rows": rows.to_dict(orient="records"),
         "corrections_applied": len(fixes),
     }
-    if truth is not None:
-        result["evaluation"] = {"accuracy": float((df["category"] == truth).mean()), "rows": int(len(df))}
-    return result

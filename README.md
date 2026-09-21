@@ -13,7 +13,9 @@ There are two front ends over the same model code in `src/`:
 
 ## Web app (Next.js + FastAPI)
 
-The page shows, top to bottom: a sentence-led summary with the whole statement as
+You start with an empty page and upload your own statement CSV; nothing is
+pre-loaded, and the file is analyzed in memory and not saved. Then the page
+shows, top to bottom: a sentence-led summary with the whole statement as
 one strip (click a category to filter), month-by-month spend, fixed monthly
 commitments, spending patterns, and a transactions table. Rows the model is
 unsure about are marked **Check** and collected under "Needs a look". Change a
@@ -29,16 +31,15 @@ categorized row as JSON.
 
 | form field | meaning |
 | --- | --- |
-| `file` | the statement CSV (omit it with `use_sample=true` to use the demo) |
-| `use_sample` | `true` scores `data/sample_statement.csv` and reports its accuracy |
+| `file` | the statement CSV (required: there is no built-in sample) |
 | `n_clusters` | `0` (default) picks 3 to 6 patterns automatically, or 2 to 8 to choose |
 | `corrections` | JSON list of `{description, category}`; the model is refit with them |
 
 Bad input comes back as a 400 with a readable `error` (missing columns, an empty
 file, a non-numeric amount with its CSV line number, an unknown category).
 
-`vercel.json` rewrites `/api/*` to the function and bundles `src/` and `data/`
-with it. Deploying is a normal Vercel git import: it detects Next.js and the
+`vercel.json` rewrites `/api/*` to the function and bundles `src/` and the
+training data (`data/seed_labeled.csv`) with it. Deploying is a normal Vercel git import: it detects Next.js and the
 Python function on its own.
 
 ### Running it locally
@@ -69,7 +70,7 @@ The app fits the model in memory at launch, so there is no saved model to go
 stale. `python train.py` is still there when you want the numbers:
 
 ```bash
-python train.py     # merchant-grouped CV + score on data/sample_statement.csv; saves models/categorizer.joblib
+python train.py     # merchant-grouped CV + score on data/holdout_statement.csv; saves models/categorizer.joblib
 ```
 
 ## Input format
@@ -97,7 +98,7 @@ not how it will do on your bank's exact export.
 | Accuracy on a 204-row held-out statement with brands the model never saw | 0.544 | **0.877** (macro-F1 0.904) |
 | Merchant-grouped cross-validation (whole merchants held out per fold) | not measured | 0.662 |
 | Share of mistakes that carry a low-confidence flag | n/a (no rows were ever flagged) | 64%, flagging only 5% of correct rows |
-| Cluster separation (silhouette) on the demo statement | about 0.07 | 0.18 |
+| Cluster separation (silhouette) on the held-out statement | about 0.07 | 0.18 |
 | Accuracy after fixing one row per misread brand (6 fixes) | n/a | 1.000 |
 
 "Before" is the old TF-IDF + Naive Bayes model trained on the old 252-row seed
@@ -150,7 +151,6 @@ its own statistics, and duplicate names are told apart by top category.
 app/                    Next.js page, layout and styles (App Router)
 components/             spend strip, month chart, commitments, patterns, table
 lib/                    shared TS types, category colors, Indian-format helpers
-public/                 downloadable sample statement
 api/index.py            FastAPI function behind /api/analyze
 api/requirements.txt    Python deps for the API
 vercel.json             /api/* rewrite + files bundled with the function
@@ -160,7 +160,7 @@ src/categorizer.py      TF-IDF + voting ensemble, grouped CV, scoring
 src/clusters.py         recurring detection, features, K-Means, cluster naming
 data/generate.py        deterministic generator for the synthetic data
 data/seed_labeled.csv   training set: about 1,400 rows, 8 categories, merchant column
-data/sample_statement.csv  6-month demo statement with answer key (unseen brands)
+data/holdout_statement.csv  6-month statement with answer key, for measuring accuracy only
 tests/                  pytest suite for the model, clustering and API
 ```
 

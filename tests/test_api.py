@@ -1,5 +1,6 @@
 import json
 
+import pandas as pd
 import pytest
 
 pytest.importorskip("fastapi")
@@ -10,25 +11,38 @@ from api.index import app  # noqa: E402
 
 client = TestClient(app)
 
+# A realistic six-month statement, uploaded the way a user would (no answer key).
+STATEMENT = pd.read_csv("data/holdout_statement.csv").drop(columns=["category"]).to_csv(index=False)
+
 
 def post_csv(text: str, **data):
-    return client.post(
-        "/api/analyze",
-        files={"file": ("s.csv", text.encode(), "text/csv")},
-        data={"use_sample": "false", **data},
-    )
+    return client.post("/api/analyze", files={"file": ("s.csv", text.encode(), "text/csv")}, data=data)
 
 
-def test_sample_statement_reports_accuracy_and_structure():
-    r = client.post("/api/analyze", data={"use_sample": "true"})
+def test_uploaded_statement_is_analyzed_end_to_end():
+    r = post_csv(STATEMENT)
     assert r.status_code == 200
     j = r.json()
-    assert j["evaluation"]["accuracy"] > 0.8
+    assert j["metrics"]["transactions"] == 204
     assert j["clusters"]["auto"] and 3 <= j["clusters"]["k"] <= 6
     assert len(j["recurring"]) >= 8
     assert len(j["monthly"]) == 6
     assert abs(sum(c["share"] for c in j["categories"]) - 1) < 1e-6
     assert {"low_confidence", "recurring", "cluster_label"} <= set(j["rows"][0])
+    assert "evaluation" not in j  # there is no answer key for an upload
+
+
+def test_the_analyzer_has_no_built_in_sample():
+    # No file means nothing to analyze; the old `use_sample` switch is gone.
+    for data in ({}, {"use_sample": "true"}):
+        r = client.post("/api/analyze", data=data)
+        assert r.status_code == 400
+        assert "Upload a statement CSV" in r.json()["error"]
+
+
+def test_manual_cluster_count_is_respected_and_clamped():
+    assert post_csv(STATEMENT, n_clusters="5").json()["clusters"]["k"] == 5
+    assert post_csv(STATEMENT, n_clusters="99").json()["clusters"]["k"] == 8
 
 
 def test_corrections_teach_the_model_a_brand_it_misread():
@@ -36,9 +50,10 @@ def test_corrections_teach_the_model_a_brand_it_misread():
     before = post_csv(stmt).json()
     fix = [{"description": "UPI/RAPIDO/112345", "category": "travel"}]
     after = post_csv(stmt, corrections=json.dumps(fix)).json()
+    assert before["corrections_applied"] == 0
     assert after["corrections_applied"] == 1
     assert {r["category"] for r in after["rows"]} == {"travel"}
-    assert before["corrections_applied"] == 0
+    assert next(r for r in after["rows"] if r["description"] == "UPI/RAPIDO/112345")["corrected"]
 
 
 @pytest.mark.parametrize(
@@ -47,6 +62,7 @@ def test_corrections_teach_the_model_a_brand_it_misread():
         ("date,description,amount\n2024-03-14,X,abc\n", "non-numeric amount (first at CSV line 2)"),
         ("a,b\n1,2\n", "Missing column"),
         ("date,description,amount\n", "no rows"),
+        ("", "Could not read CSV"),
     ],
 )
 def test_bad_statements_get_a_readable_400(csv, fragment):
@@ -55,8 +71,8 @@ def test_bad_statements_get_a_readable_400(csv, fragment):
 
 
 def test_bad_corrections_are_rejected():
-    r = client.post("/api/analyze", data={"use_sample": "true", "corrections": '[{"description":"x","category":"nope"}]'})
-    assert r.status_code == 400
+    for raw in ('[{"description":"x","category":"nope"}]', "oops"):
+        assert post_csv(STATEMENT, corrections=raw).status_code == 400
 
 
 def test_day_first_dates_and_blank_cells_do_not_crash():

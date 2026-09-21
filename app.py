@@ -27,18 +27,14 @@ def read_csv(file) -> pd.DataFrame:
 with st.sidebar:
     st.header("Input")
     upload = st.file_uploader("Statement CSV", type="csv")
-    use_sample = st.checkbox("Use the bundled sample statement", value=upload is None)
     auto_k = st.checkbox("Choose the number of clusters automatically", value=True)
     n_clusters = st.slider("Spend clusters", 2, 8, 4, disabled=auto_k)
     st.markdown("CSV needs columns: `date`, `description`, `amount`.")
 
-if upload is not None and not use_sample:
-    df = read_csv(upload)
-elif use_sample:
-    df = pd.read_csv("data/sample_statement.csv").drop(columns=["category"])
-else:
-    st.info("Upload a CSV or tick the sample box to get started.")
+if upload is None:
+    st.info("Upload a statement CSV in the sidebar to get started.")
     st.stop()
+df = read_csv(upload)
 
 df.columns = [c.strip().lower() for c in df.columns]
 missing = REQUIRED - set(df.columns)

@@ -78,7 +78,6 @@ export type AnalyzeResponse = {
   };
   rows: TransactionRow[];
   corrections_applied: number;
-  evaluation?: { accuracy: number; rows: number };
 };
 
 export type Corrections = Record<string, CategoryId>;

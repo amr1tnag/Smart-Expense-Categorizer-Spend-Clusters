@@ -4,7 +4,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type DragEvent } fro
 import Commitments from "@/components/Commitments";
 import MonthChart from "@/components/MonthChart";
 import Patterns from "@/components/Patterns";
-import SourceBar, { type Source } from "@/components/SourceBar";
+import SourceBar from "@/components/SourceBar";
 import SpendStrip from "@/components/SpendStrip";
 import Transactions, { type Filter } from "@/components/Transactions";
 import { dateRange, percent, rupees, spanWords } from "@/lib/format";
@@ -44,7 +44,7 @@ function toCsv(rows: TransactionRow[]): string {
 }
 
 export default function Home() {
-  const [source, setSource] = useState<Source>("sample");
+  const input = useRef<HTMLInputElement>(null);
   const [file, setFile] = useState<File | null>(null);
   const [clusters, setClusters] = useState(0);
   const [corrections, setCorrections] = useState<Corrections>({});
@@ -56,11 +56,11 @@ export default function Home() {
 
   const [data, setData] = useState<AnalyzeResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [dragging, setDragging] = useState(false);
 
   useEffect(() => {
-    if (source === "file" && !file) {
+    if (!file) {
       setData(null);
       setError(null);
       setLoading(false);
@@ -71,13 +71,12 @@ export default function Home() {
       setLoading(true);
       setError(null);
       const form = new FormData();
-      form.set("use_sample", String(source === "sample"));
+      form.set("file", file);
       form.set("n_clusters", String(clusters));
       form.set(
         "corrections",
         JSON.stringify(Object.entries(corrections).map(([description, category]) => ({ description, category }))),
       );
-      if (source === "file" && file) form.set("file", file);
       try {
         const res = await fetch("/api/analyze", { method: "POST", body: form, signal: ctl.signal });
         const text = await res.text();
@@ -101,7 +100,7 @@ export default function Home() {
       clearTimeout(timer);
       ctl.abort();
     };
-  }, [source, file, clusters, corrections]);
+  }, [file, clusters, corrections]);
 
   const resetView = useCallback(() => {
     setCorrections({});
@@ -111,14 +110,11 @@ export default function Home() {
     setQuery("");
   }, []);
 
-  const chooseSource = (s: Source) => {
-    setSource(s);
-    resetView();
-  };
   const chooseFile = (f: File | null) => {
     setFile(f);
     resetView();
   };
+  const pick = () => input.current?.click();
 
   const onDrop = (e: DragEvent) => {
     e.preventDefault();
@@ -161,16 +157,30 @@ export default function Home() {
 
   return (
     <div className="shell">
-      <SourceBar
-        source={source}
-        onSource={chooseSource}
-        file={file}
-        onFile={chooseFile}
-        clusters={clusters}
-        onClusters={setClusters}
+      <input
+        ref={input}
+        type="file"
+        accept=".csv,text/csv"
+        className="sr-only"
+        tabIndex={-1}
+        aria-label="Statement CSV"
+        onChange={(e) => {
+          const f = e.target.files?.[0] ?? null;
+          e.target.value = ""; // lets the same file be chosen again after an error
+          if (f) chooseFile(f);
+        }}
       />
+      <SourceBar fileName={file?.name ?? null} onPick={pick} clusters={clusters} onClusters={setClusters} />
 
-      {source === "file" && !file && (
+      {error && (
+        <div className="alert" role="alert">
+          <strong>We couldn&apos;t analyze that file</strong>
+          {error.replace(/\.?\s*$/, ".")} The file needs a header row with <code>date</code>, <code>description</code> and{" "}
+          <code>amount</code> columns.
+        </div>
+      )}
+
+      {(!file || error) && (
         <div
           className="dropzone"
           data-over={dragging}
@@ -181,34 +191,18 @@ export default function Home() {
           onDragLeave={() => setDragging(false)}
           onDrop={onDrop}
         >
-          <h1>Drop in a bank statement</h1>
+          <h1>{error ? "Try another file" : "Drop in a bank statement"}</h1>
           <p>
-            Any CSV with <code>date</code>, <code>description</code> and <code>amount</code> columns.
-            The file is analyzed in memory and not saved.
+            Any CSV with <code>date</code>, <code>description</code> and <code>amount</code> columns. The file
+            is analyzed in memory and not saved.
           </p>
-          <p>
-            No statement handy?{" "}
-            <a className="link-btn" href="/sample_statement.csv" download>
-              Download a sample CSV
-            </a>{" "}
-            or{" "}
-            <button type="button" className="link-btn" onClick={() => chooseSource("sample")}>
-              use the built-in sample
-            </button>
-            .
-          </p>
+          <button type="button" className="btn primary" style={{ marginTop: 12 }} onClick={pick}>
+            Choose a CSV
+          </button>
         </div>
       )}
 
-      {error && (
-        <div className="alert" role="alert">
-          <strong>We couldn&apos;t analyze that file</strong>
-          {error} Check that the first row has the headers <code>date</code>, <code>description</code> and{" "}
-          <code>amount</code>, then try again.
-        </div>
-      )}
-
-      {loading && !data && !error && !(source === "file" && !file) && (
+      {loading && !data && !error && file && (
         <div aria-busy="true" aria-label="Analyzing your statement" style={{ marginTop: 64 }}>
           <div className="skeleton" style={{ height: 120, maxWidth: 760 }} />
           <div className="skeleton" style={{ height: 56, marginTop: 36 }} />
@@ -234,9 +228,6 @@ export default function Home() {
               ) : (
                 "The model is confident about every one."
               )}
-              {data.evaluation && !data.corrections_applied
-                ? ` Checked against the answer key, ${Math.round(data.evaluation.accuracy * 100)}% of these categories are right.`
-                : ""}
             </p>
             <SpendStrip categories={data.categories} active={category} onSelect={setCategory} />
           </section>
