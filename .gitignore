@@ -3,3 +3,10 @@ __pycache__/
 models/
 .venv/
 .pytest_cache/
+
+# Next.js / Vercel
+node_modules/
+.next/
+.vercel/
+next-env.d.ts
+*.tsbuildinfo
