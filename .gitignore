@@ -3,3 +3,8 @@ __pycache__/
 models/
 .venv/
 .pytest_cache/
+
+# personal statements - never commit these
+data/august_*.csv
+data/my_*.csv
+data/statement*.csv
